@@ -1,0 +1,9 @@
+streamlit
+pypdf
+sentence-transformers
+langchain-groq
+langchain
+langchain-core
+python-dotenv
+rouge-score
+nltk
