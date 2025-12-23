@@ -14,14 +14,33 @@ import os
 # Load environment variables - works both locally (.env) and on Streamlit Cloud (secrets)
 load_dotenv()
 
-# For Streamlit Cloud: use secrets if available, otherwise fall back to environment variables
-if hasattr(st, 'secrets') and 'GROQ_API_KEY' in st.secrets:
-    os.environ['GROQ_API_KEY'] = st.secrets['GROQ_API_KEY']
-elif 'GROQ_API_KEY' not in os.environ:
-    # Try to load from .env file (for local development)
-    groq_key = os.getenv('GROQ_API_KEY')
-    if groq_key:
-        os.environ['GROQ_API_KEY'] = groq_key
+# Get API key from Streamlit secrets (Streamlit Cloud) or environment variables (local)
+groq_api_key = None
+
+# Try Streamlit secrets first (for Streamlit Cloud)
+try:
+    if hasattr(st, 'secrets'):
+        # Try different possible secret key formats
+        if hasattr(st.secrets, 'get'):
+            groq_api_key = st.secrets.get('GROQ_API_KEY') or st.secrets.get('groq_api_key')
+        elif isinstance(st.secrets, dict):
+            groq_api_key = st.secrets.get('GROQ_API_KEY') or st.secrets.get('groq_api_key')
+        elif 'GROQ_API_KEY' in dir(st.secrets):
+            groq_api_key = getattr(st.secrets, 'GROQ_API_KEY', None)
+except Exception:
+    pass
+
+# If not found in secrets, try environment variable (for local development)
+if not groq_api_key:
+    groq_api_key = os.getenv('GROQ_API_KEY')
+
+# Set in environment for ChatGroq to pick up
+if groq_api_key:
+    os.environ['GROQ_API_KEY'] = groq_api_key
+else:
+    st.error("⚠️ GROQ_API_KEY not found. Please set it in Streamlit Cloud secrets (Settings → Secrets) or .env file.")
+    st.info("In Streamlit Cloud, add this to your secrets:\n```\nGROQ_API_KEY = 'your-api-key-here'\n```")
+    st.stop()
 
 st.set_page_config(page_title="Resume Matcher AI", layout="centered")
 st.title("Resume Matcher AI")
@@ -29,8 +48,14 @@ st.markdown("Works for any job · Zero data stored · By Sai Sushma Mutyala")
 
 @st.cache_resource
 def load_models():
+    # Ensure API key is available
+    api_key = os.environ.get('GROQ_API_KEY')
+    if not api_key:
+        st.error("GROQ_API_KEY is not set. Please configure it in Streamlit Cloud secrets.")
+        st.stop()
+    
     embedder = SentenceTransformer('all-MiniLM-L6-v2')
-    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0)
+    llm = ChatGroq(model="llama-3.3-70b-versatile", temperature=0, api_key=api_key)
     return embedder, llm
 
 embedder, llm = load_models()
