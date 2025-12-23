@@ -11,7 +11,17 @@ from utils.structure_feedback import get_structure_feedback
 from dotenv import load_dotenv
 import os
 
+# Load environment variables - works both locally (.env) and on Streamlit Cloud (secrets)
 load_dotenv()
+
+# For Streamlit Cloud: use secrets if available, otherwise fall back to environment variables
+if hasattr(st, 'secrets') and 'GROQ_API_KEY' in st.secrets:
+    os.environ['GROQ_API_KEY'] = st.secrets['GROQ_API_KEY']
+elif 'GROQ_API_KEY' not in os.environ:
+    # Try to load from .env file (for local development)
+    groq_key = os.getenv('GROQ_API_KEY')
+    if groq_key:
+        os.environ['GROQ_API_KEY'] = groq_key
 
 st.set_page_config(page_title="Resume Matcher AI", layout="centered")
 st.title("Resume Matcher AI")
