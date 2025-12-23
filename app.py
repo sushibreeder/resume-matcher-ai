@@ -82,19 +82,24 @@ if analyze_button and resume_file and jd_text and len(jd_text.strip()) >= 10:
             t = page.extract_text()
             if t: resume_text += t + "\n"
 
-    # Hybrid score - Improved algorithm
+    # Hybrid score - More accurate and generous algorithm
     with st.spinner("Calculating score..."):
-        # 1. Semantic similarity using chunks (more accurate)
+        # 1. Semantic similarity using chunks (more comprehensive)
         resume_chunks = [line.strip() for line in resume_text.split("\n") if len(line.strip()) > 30][:30]
         if resume_chunks:
             emb_chunks = embedder.encode(resume_chunks, convert_to_tensor=True)
             emb_jd = embedder.encode(jd_text, convert_to_tensor=True)
             semantic_scores = util.cos_sim(emb_chunks, emb_jd)
-            semantic = semantic_scores.max().item() * 100
+            # Use top 3 chunks average + max for better representation
+            scores_list = semantic_scores.flatten().tolist()
+            scores_list.sort(reverse=True)
+            top_3_avg = sum(scores_list[:min(3, len(scores_list))]) / min(3, len(scores_list))
+            semantic_max = max(scores_list) if scores_list else 0
+            semantic = (top_3_avg * 0.6 + semantic_max * 0.4) * 100  # Weighted average
         else:
             semantic = 0
         
-        # 2. Improved keyword matching (case-insensitive, handles variations)
+        # 2. Improved keyword matching (more lenient and comprehensive)
         jd_lower = jd_text.lower()
         resume_lower = resume_text.lower()
         
@@ -104,31 +109,48 @@ if analyze_button and resume_file and jd_text and len(jd_text.strip()) >= 10:
         jd_keywords = set(re.findall(r'\b[a-z]{3,}\b', jd_lower)) - stopwords
         resume_keywords = set(re.findall(r'\b[a-z]{3,}\b', resume_lower)) - stopwords
         
-        # Calculate keyword match (more lenient)
+        # Calculate keyword match with partial credit for similar matches
         if jd_keywords:
-            matched = len(jd_keywords & resume_keywords)
+            exact_matches = len(jd_keywords & resume_keywords)
+            # Give partial credit for keywords that contain each other (e.g., "python" matches "python3")
+            partial_matches = sum(1 for jd_kw in jd_keywords 
+                                 if jd_kw not in resume_keywords 
+                                 and any(jd_kw in res_kw or res_kw in jd_kw 
+                                        for res_kw in resume_keywords if len(jd_kw) >= 4))
+            matched = exact_matches + (partial_matches * 0.5)  # Partial credit
             keyword = (matched / len(jd_keywords)) * 100
         else:
             keyword = 0
         
-        # 3. Combined score with more generous weighting
-        # More weight on semantic (it's more accurate), but ensure keywords help
-        base_score = 0.55 * semantic + 0.45 * keyword
+        # 3. Combined score with balanced weighting
+        base_score = 0.50 * semantic + 0.50 * keyword
         
-        # 4. Multiple boost strategies to avoid underestimation
-        # Boost if semantic is decent (even if keyword match is lower)
-        if semantic > 45:
-            base_score = base_score * 1.15  # 15% boost for good semantic match
-        elif semantic > 35:
-            base_score = base_score * 1.10  # 10% boost for moderate semantic match
+        # 4. More generous boost strategies
+        # Boost based on semantic similarity (stronger signal)
+        if semantic > 50:
+            base_score = base_score * 1.25  # 25% boost for strong semantic match
+        elif semantic > 40:
+            base_score = base_score * 1.20  # 20% boost for good semantic match
+        elif semantic > 30:
+            base_score = base_score * 1.15  # 15% boost for moderate semantic match
+        elif semantic > 20:
+            base_score = base_score * 1.10  # 10% boost for any semantic match
         
-        # Additional boost if both are decent
-        if semantic > 40 and keyword > 25:
-            base_score = base_score * 1.05  # Extra 5% boost
+        # Additional boost if keyword match is decent
+        if keyword > 40:
+            base_score = base_score * 1.10  # 10% boost for good keyword match
+        elif keyword > 30:
+            base_score = base_score * 1.05  # 5% boost for moderate keyword match
         
-        # Ensure minimum score floor for decent resumes
-        if semantic > 30 or keyword > 20:
-            base_score = max(base_score, 45)  # Floor of 45 for any decent match
+        # Extra boost if both components are decent
+        if semantic > 35 and keyword > 25:
+            base_score = base_score * 1.08  # Extra 8% boost
+        
+        # Higher minimum score floor for any reasonable match
+        if semantic > 25 or keyword > 15:
+            base_score = max(base_score, 50)  # Floor of 50 for any reasonable match
+        elif semantic > 15 or keyword > 10:
+            base_score = max(base_score, 40)  # Floor of 40 for minimal match
         
         score = round(min(base_score, 100), 1)  # Cap at 100
 
