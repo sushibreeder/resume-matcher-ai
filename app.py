@@ -60,10 +60,20 @@ def load_models():
 
 embedder, llm = load_models()
 
-resume_file = st.file_uploader("Upload resume (PDF)", type=["pdf"])
-jd_text = st.text_area("Paste job description", height=200)
+# Use a form to batch inputs and trigger analysis with a button
+with st.form("resume_analyzer_form", clear_on_submit=False):
+    resume_file = st.file_uploader("Upload resume (PDF)", type=["pdf"])
+    jd_text = st.text_area("Paste job description", height=200)
+    analyze_button = st.form_submit_button("🚀 Analyze Resume", use_container_width=True, type="primary")
 
-if resume_file and jd_text:
+# Show message if button clicked but fields are missing
+if analyze_button:
+    if not resume_file:
+        st.warning("⚠️ Please upload a resume PDF file.")
+    if not jd_text or len(jd_text.strip()) < 10:
+        st.warning("⚠️ Please paste a job description (at least 10 characters).")
+
+if analyze_button and resume_file and jd_text and len(jd_text.strip()) >= 10:
     # Extract text
     with st.spinner("Reading PDF..."):
         reader = PdfReader(io.BytesIO(resume_file.read()))
